@@ -11,6 +11,8 @@ The interface is intended to be _easy to use_ and intuitive for any level of CW 
   - Would use the SPACE bar or some other input method to act as a _straight key_.
 
 ### TODOs Right Now
+- Implement prosigns.
+- Allow audio I/O device selections.
 - Fix the GUI to scale better.
 - Add Macros functionality.
 - Implement the CW interpreter function:
