@@ -50,7 +50,8 @@ namespace CWDX {
             var newSample = new WaveSample(audioFormat, 0);
             // For each sample, add the channel values onto the aggregate total.
             foreach(WaveSample smp in samples) {
-                smp.GetAllChannelValues().Select((x, i) => combinedSamples[i] += x);
+                int[] channelValues = smp.GetAllChannelValues();
+                for(int i = 0; i < channelValues.Length; i++) { combinedSamples[i] += channelValues[i]; }
             }
             // Now, set the new sample's channel values to be mapped to the final totals for each channel.
             for(int channel = 0; channel < combinedSamples.Length; channel++) {
@@ -171,6 +172,13 @@ namespace CWDX {
     public static class WaveGenerator {
 
         /// <summary>
+        /// Amount of periods per generated wave for which the signal is attenuated. This is in hopes to
+        /// reduce any hard clicks between signals.
+        /// </summary>
+        /// <see cref="CreateNewWave(WaveAudioFormat, WaveType, double, double, double)"/>
+        public static int ATTENUATION_CYCLES = 2;
+
+        /// <summary>
         /// Defines multiple different waveforms available for the generator to build.
         /// </summary>
         /// <seealso cref="WaveGenerator"/>
@@ -185,6 +193,84 @@ namespace CWDX {
             var returnStream = new List<byte>();
             foreach(WaveSample sample in audioStream) { returnStream.AddRange(sample.Sample); }
             return returnStream.ToArray();
+        }
+
+        /// <summary>
+        /// Create and return an audio stream of the specified duration that has no sound.
+        /// </summary>
+        /// <param name="audioFormat">The format in which the silence should be created.</param>
+        /// <param name="spaceDurationSec">The amount of time in seconds for which to create total silence.</param>
+        /// <returns>Zeroed set of WaveSample objects that will not make any sound if played.</returns>
+        /// <see cref="WaveSample"/>
+        public static List<WaveSample> CreateEmptySpace(WaveAudioFormat audioFormat, double spaceDurationSec) {
+            double totalSamples = Math.Ceiling(spaceDurationSec * (double)audioFormat.SampleRate);
+            WaveSample[] silentAudioStream = new WaveSample[(int)totalSamples];
+            for(int i = 0; i < (int)totalSamples; i++) {
+                silentAudioStream[i] = new WaveSample(audioFormat, 0);
+            }
+            return new List<WaveSample>(silentAudioStream);
+        }
+
+        public static List<WaveSample> CreateNewWave(WaveAudioFormat audioFormat, WaveType wavePattern,
+                double amplitudePerc, double durationSec, double frequencyHz) {
+            // Cap the amplitude at 100%.
+            amplitudePerc = Math.Min(100.0, Math.Abs(amplitudePerc));
+            // Samples required to complete one wave period at the given frequency.
+            double samplesPerWaveCycle = (double)(audioFormat.SampleRate / frequencyHz);
+            // Total amount of samples for the wave duration in its entirety.
+            double totalSamples = durationSec * (double)audioFormat.SampleRate;
+            // Additional amount of samples to append onto the stream until the final wave/period completes.
+            //   This is aimed at keeping sudden adjacent tones from causing hard key clicks when transitioning.
+            double extraSamples = samplesPerWaveCycle - (totalSamples % samplesPerWaveCycle);
+            double waveAttenuationSamplesCount = (samplesPerWaveCycle * WaveGenerator.ATTENUATION_CYCLES);
+            // Short-handing some variables from the audio format.
+            int channels = audioFormat.ChannelCount;
+            int sampleRate = audioFormat.SampleRate;
+            int bitsPerSample = audioFormat.BitsPerSample;
+            int bytesPerSample = audioFormat.BytesPerSample;
+            // Get the peak amplitude permitted based on the amplitudePerc parameter.
+            double peakAmplitude = audioFormat.GetPeakAmplitude(amplitudePerc);
+            // Initialize the new stream object.
+            var newWaveStream = new List<WaveSample>();
+            // Create the wave stream based on the requested wave type.
+            Func<int, double> sampleCalculation = wavePattern switch {
+                // f(x) = amplitude * SIN(2pi * x * frequency / sampleRate)
+                WaveType.SINE => (currSample =>
+                    peakAmplitude * Math.Sin((2*Math.PI * currSample * frequencyHz) / sampleRate)
+                ),
+                // f(x) = abs(amplitude), when 0 <= x < period/2 ;; f(x) = neg(amplitude), when period/2 <= x < period
+                // My implementation factors amplitude out of: f(x) = (({2*[amp/samplesPerPeriod]*x + amp} % [amp*2]) - (amp)
+                WaveType.SAWTOOTH => (currSample =>
+                    ((peakAmplitude * ((2 * currSample / samplesPerWaveCycle) + 1)) % (peakAmplitude * 2)) - peakAmplitude
+                ),
+                // f(x) = x, when 0 <= x < pi ;; f(x) = x-2pi, when pi <= x =< 2pi
+                WaveType.SQUARE => (currSample =>
+                    (currSample % samplesPerWaveCycle) < (samplesPerWaveCycle / 2) ? peakAmplitude : 0 - peakAmplitude
+                ),
+                // f(x) = [2*amp / pi] * [ arcsin( sin( {2pi * freq}/sampleRate ) * x ) ]
+                // Definitely had to look this one up...
+                WaveType.TRIANGLE => (currSample => 
+                    ((2 * peakAmplitude) / Math.PI) 
+                    * Math.Asin(Math.Sin(((2 * Math.PI * frequencyHz) / sampleRate) * currSample))
+                ),
+                // If no other enum matched, throw exception
+                _ => throw new Exception("CreateNewWave: Invalid wave pattern selection: " + wavePattern.ToString())
+            };
+            for(int currentSample = 0; currentSample < totalSamples + extraSamples; currentSample++) {
+                double sampleValue = sampleCalculation(currentSample);
+                if(currentSample < waveAttenuationSamplesCount) {
+                    // For the first few wave cycles, attenuate the max amplitude by a
+                    //   ratio to gradually introduce the signal.
+                    //   Again, this is aimed to help prevent clicking in the resulting sample
+                    sampleValue *= (double)((double)currentSample / waveAttenuationSamplesCount);
+                } else if(currentSample > ((totalSamples + extraSamples) - waveAttenuationSamplesCount)) {
+                    // Likewise, attenuate the end of the signal for the sample.
+                    sampleValue *= (double)((double)((totalSamples + extraSamples) - currentSample) / waveAttenuationSamplesCount);
+                }
+                newWaveStream.Add(new WaveSample(audioFormat, (int)sampleValue));
+            }
+            // Finally, return the new stream.
+            return newWaveStream;
         }
 
     }

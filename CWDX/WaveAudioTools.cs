@@ -45,6 +45,7 @@ namespace CWDX {
             }
             // Ready the output samples stream and initialize all values to 0.
             var finalStream = new WaveSample[longestSample];
+            for(int i = 0; i < longestSample; i++) { finalStream[i] = new WaveSample(audioFormat, 0); }
             finalStream.Select((x, i) => finalStream[i] = new WaveSample(audioFormat, 0));
             // If the total amplitude weightings add up to zero for some reason, or no streams are left over after filtering,
             //   return an empty stream at the right sample length.
