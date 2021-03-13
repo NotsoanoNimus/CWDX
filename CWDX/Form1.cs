@@ -21,8 +21,8 @@ namespace CWDX {
             // Populate the cbWaveForm list and attempt to select the SIN wave.
             foreach(SignalGeneratorType e in Enum.GetValues(typeof(SignalGeneratorType))) { this.cbWaveType.Items.Add(e); }
             // Set up the AudioHandler object.
-            this.audioHandler = new AudioHandler() {
-                Frequency = tbGain.Value, Gain = tbFreq.Value, WaveType = SignalGeneratorType.Sin
+            this.audioHandler = new AudioHandler(tbFreq.Value) {
+                Frequency = tbFreq.Value, Gain = tbGain.Value, WaveType = SignalGeneratorType.Sin
             };
             // Engage these two actions just once.
             this.tbGain_Scroll(null, null); this.tbFreq_Scroll(null, null);
@@ -69,7 +69,9 @@ namespace CWDX {
             this.playMorse?.Start();
             await playMorse;
             this.playMorse?.Dispose();
-            this.tTXLive.Text += (ct.IsCancellationRequested ? "[[CANCELLED]]" : "") + Environment.NewLine + "Original Message: "
+            this.tTXLive.Text +=
+                (ct.IsCancellationRequested ? "[[CANCELLED]]" : "")
+                + Environment.NewLine + "Original Message: "
                 + this.tTXText.Text + Environment.NewLine + Environment.NewLine;
             if(!this.chbKeepText.Checked) { this.tTXText.Text = ""; }
             this.pbTXTime.Value = 0;
@@ -84,7 +86,6 @@ namespace CWDX {
 
         private string TransmitText(string txText, int wpmValue, CancellationToken cancelToken) {
             try {
-                // VV was (var c, var d)
                 (List<MorseSymbol> symbols, string outputText) = Morse.GetTimeSequence(txText, wpmValue);
                 this.audioHandler.PlayStream(symbols, cancelToken);
                 return outputText;
