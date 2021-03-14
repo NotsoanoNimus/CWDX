@@ -75,6 +75,7 @@ namespace CWDX {
             var wavFormat = new WaveAudioFormat(16000, 16, 1); //doesn't need to be the most high-def sound
             var wavType = WaveGenerator.WaveType.SINE; //always a SINE wave (for now; configurable later)
             var streamSequence = new List<WaveSample>(); //container for the resulting stream of samples
+            streamSequence.Add(new WaveSample(wavFormat, 0)); //initialize the stream with at least ONE empty sample
             ////Loading icon??
             foreach(MorseSymbol sym in morseStream) {
                 if(cancelToken != null && cancelToken.IsCancellationRequested) { return; }
@@ -113,10 +114,15 @@ namespace CWDX {
                 infiniteLoopPrevention++;
             }
             // During stream playback, send out the symbols.
-            foreach(MorseSymbol sym in morseStream) {
+            for(int index = 0; index < morseStream.Count; index++) {
+                var sym = morseStream[index];
                 if(cancelToken != null && cancelToken.IsCancellationRequested) { break; }
                 Thread.Sleep((int)sym.getDuration());
                 try { updateTextStream(sym); } catch { }
+                // Handle progress bar updates.
+                Program.mainForm.Invoke((System.Windows.Forms.MethodInvoker)delegate {
+                    try { Program.pbTXProgress.Value = (((index * 100) / morseStream.Count) + 1); } catch { }
+                }); index++;
             }
             // Regardless of the outcome (finished or cancelled), stop the sound.
             mediaPlayer.Stop();

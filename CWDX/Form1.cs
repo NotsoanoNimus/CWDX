@@ -120,6 +120,11 @@ namespace CWDX {
                 return outputText;
             } catch(Exception e) {
                 // Add error information to the interface and cancel the transmission.
+                ////this.tTXLive.Text += 
+                MessageBox.Show(
+                    Environment.NewLine + "Problem creating the Morse audio transmission:"
+                    + Environment.NewLine + e.Message
+                );
             }
             return "";
         }
