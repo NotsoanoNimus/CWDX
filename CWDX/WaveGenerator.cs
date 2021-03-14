@@ -1,7 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text;
 
 namespace CWDX {
 
@@ -112,7 +110,10 @@ namespace CWDX {
         /// <returns>An integer array mapped to each channel's value.</returns>
         public int[] GetAllChannelValues() {
             var x = new int[this.SampleFormat.ChannelCount];
-            return x.Select(r => this.GetChannelValue(r)).ToArray();
+            for(int r = 0; r < this.SampleFormat.ChannelCount; r++) {
+                x[r] = this.GetChannelValue(r);
+            }
+            return x;
         }
 
         /// <summary>
@@ -211,6 +212,17 @@ namespace CWDX {
             return new List<WaveSample>(silentAudioStream);
         }
 
+        /// <summary>
+        /// Generates a new wave-form as an audio stream (list of WaveSample objects).
+        /// </summary>
+        /// <param name="audioFormat">The format used to sample the waveform.</param>
+        /// <param name="wavePattern">The type of wave to generate.</param>
+        /// <param name="amplitudePerc">A percentage of the audio format's MaxAmplitude (0 to 100%).</param>
+        /// <param name="durationSec">How long (in seconds) the sound will be generated for.</param>
+        /// <param name="frequencyHz">The frequency at which the sound should be played.</param>
+        /// <returns>A new list of WaveSample objects that represent the sound.</returns>
+        /// <see cref="WaveSample"/>
+        /// <see cref="WaveAudioFormat"/>
         public static List<WaveSample> CreateNewWave(WaveAudioFormat audioFormat, WaveType wavePattern,
                 double amplitudePerc, double durationSec, double frequencyHz) {
             // Cap the amplitude at 100%.
@@ -223,11 +235,8 @@ namespace CWDX {
             //   This is aimed at keeping sudden adjacent tones from causing hard key clicks when transitioning.
             double extraSamples = samplesPerWaveCycle - (totalSamples % samplesPerWaveCycle);
             double waveAttenuationSamplesCount = (samplesPerWaveCycle * WaveGenerator.ATTENUATION_CYCLES);
-            // Short-handing some variables from the audio format.
-            int channels = audioFormat.ChannelCount;
+            // Short-handing some variables from the audio format as needed...
             int sampleRate = audioFormat.SampleRate;
-            int bitsPerSample = audioFormat.BitsPerSample;
-            int bytesPerSample = audioFormat.BytesPerSample;
             // Get the peak amplitude permitted based on the amplitudePerc parameter.
             double peakAmplitude = audioFormat.GetPeakAmplitude(amplitudePerc);
             // Initialize the new stream object.

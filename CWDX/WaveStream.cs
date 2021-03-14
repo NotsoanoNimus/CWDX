@@ -153,9 +153,11 @@ namespace CWDX {
         private WaveFileFormat.RIFF_CHUNK riff;
         private WaveFileFormat.FMT_CHUNK fmt;
         private WaveFileFormat.DATA_CHUNK data;
-        public WaveStream(WaveAudioFormat c, byte[] audioData) {
+        public WaveStream(List<WaveSample> fullAudioStream) {
+            WaveAudioFormat audioFormat = fullAudioStream?[0]?.SampleFormat;
+            byte[] audioData = WaveGenerator.ToByteArray(fullAudioStream.ToArray());
             this.riff = new WaveFileFormat.RIFF_CHUNK();
-            this.fmt = new WaveFileFormat.FMT_CHUNK(c);
+            this.fmt = new WaveFileFormat.FMT_CHUNK(audioFormat);
             this.data = new WaveFileFormat.DATA_CHUNK(audioData);
             this.riff.SetChunkSize(4 + (8 + this.fmt.GetChunkSize()) + (8 + this.data.GetChunkSize()));
         }

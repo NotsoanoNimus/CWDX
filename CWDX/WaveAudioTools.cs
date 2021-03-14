@@ -1,7 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text;
 
 namespace CWDX {
     /// <summary>
@@ -46,7 +44,6 @@ namespace CWDX {
             // Ready the output samples stream and initialize all values to 0.
             var finalStream = new WaveSample[longestSample];
             for(int i = 0; i < longestSample; i++) { finalStream[i] = new WaveSample(audioFormat, 0); }
-            finalStream.Select((x, i) => finalStream[i] = new WaveSample(audioFormat, 0));
             // If the total amplitude weightings add up to zero for some reason, or no streams are left over after filtering,
             //   return an empty stream at the right sample length.
             if(totalAmplitudeWeights <= 0.0 || filteredComponentStreams.Count <= 0) { return new List<WaveSample>(finalStream); }
@@ -98,6 +95,11 @@ namespace CWDX {
         }
 
 
+        /// <summary>
+        /// Appends streams onto the referenced "base" stream; does not mix streams.
+        /// </summary>
+        /// <param name="streamToExtend">Pointer to a stream of samples to extend.</param>
+        /// <param name="appendedStreams">An open-ended list of streams to add. The list is appended from index 0 upwards, meaning the first stream in the params will be the first stream appended.</param>
         public static void AppendSamples(ref List<WaveSample> streamToExtend,
                 params (double?, List<WaveSample>)[] appendedStreams) {
             if(streamToExtend?.Count <= 0) {
@@ -106,10 +108,11 @@ namespace CWDX {
             for(int i = 0; i < appendedStreams?.Length; i++) {
                 // Get the stream.
                 (double? newVolumePercentage, List<WaveSample> appendMe) = appendedStreams[i];
+                double volAdj = Math.Min(Math.Abs(newVolumePercentage ?? 100.0), 100.0);
                 if(appendMe.Count <= 0) { continue; }
                 else if(appendMe[0].SampleFormat != streamToExtend[0].SampleFormat) { continue; }
                 // Set the volume (unchanged if the % provided is missing/null).
-                WaveAudioTools.ChangeVolume(newVolumePercentage ?? 100.0, ref appendMe);
+                WaveAudioTools.ChangeVolume(volAdj, ref appendMe);
                 // Append the samples onto the original stream being extended.
                 streamToExtend.AddRange(appendMe);
             }
