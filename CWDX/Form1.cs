@@ -115,7 +115,8 @@ namespace CWDX {
         private string TransmitText(string txText, int wpmValue, CancellationToken cancelToken) {
             try {
                 (List<MorseSymbol> symbols, string outputText) = Morse.GetTimeSequence(txText, wpmValue);
-                this.audioHandler.PlayStream(symbols, cancelToken);
+                this.audioHandler.PlayWaveStream(symbols, cancelToken);
+                //this.audioHandler.PlayStream(symbols, cancelToken);
                 return outputText;
             } catch(Exception e) {
                 // Add error information to the interface and cancel the transmission.

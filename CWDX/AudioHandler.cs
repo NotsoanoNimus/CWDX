@@ -63,6 +63,66 @@ namespace CWDX {
         }
 
         /// <summary>
+        /// Plays the given sequence of Morse symbols using the internal WaveGenerator module. This "queues"
+        /// audio to play, rather than relying on Thread.Sleep to gap the DITs/DAHs (symbols) from each other.
+        /// </summary>
+        /// <param name="morseStream">The sequence of MorseSymbol items to be played.</param>
+        /// <param name="cancelToken">Tracks whether or not this operation should be cancelled.</param>
+        /// <see cref="MorseSymbol"/>
+        /// <see cref="WaveGenerator"/>
+        public void PlayWaveStream(List<MorseSymbol> morseStream, CancellationToken cancelToken) {
+            // First, get the audio constructed.
+            var wavFormat = new WaveAudioFormat(16000, 16, 1); //doesn't need to be the most high-def sound
+            var wavType = WaveGenerator.WaveType.SINE; //always a SINE wave (for now; configurable later)
+            var streamSequence = new List<WaveSample>(); //container for the resulting stream of samples
+            ////Loading icon??
+            foreach(MorseSymbol sym in morseStream) {
+                if(cancelToken != null && cancelToken.IsCancellationRequested) { return; }
+                if(sym.hasSound()) {
+                    WaveAudioTools.AppendSamples(
+                        ref streamSequence,
+                        (100.0, WaveGenerator.CreateNewWave(wavFormat, wavType, this.Gain*100.0, sym.getDuration()/1000.0, this.Frequency))
+                    );
+                } else {
+                    WaveAudioTools.AppendSamples(
+                        ref streamSequence,
+                        (100.0, WaveGenerator.CreateEmptySpace(wavFormat, sym.getDuration()/1000.0))
+                    );
+                }
+            }
+            // Construct the output stream in WAV format.
+            using var finalStream = new WaveStream(streamSequence);
+            ////Release loading icon??
+            // Then, play the stream, while at the same time updating the text stream to sync as
+            //   best as possible to the currently-playing audio.
+            // Define a lambda of sorts for updating the live text view for transmissions.
+            Action<MorseSymbol> updateTextStream = s => {
+                Program.mainForm.Invoke((System.Windows.Forms.MethodInvoker)delegate {
+                    Program.txLiveView.AppendText(s.getRepresentation());
+                });
+            };
+            // Construct the player.
+            using var queuedStream = new System.IO.MemoryStream(finalStream.GetRawWaveStream());
+            using var mediaPlayer = new System.Media.SoundPlayer(queuedStream);
+            //...and...... GO!
+            mediaPlayer.Play();
+            int infiniteLoopPrevention = 0;
+            // Give the player 2s to load the stream.
+            while(!mediaPlayer.IsLoadCompleted && infiniteLoopPrevention < 100) {
+                Thread.Sleep(20); 
+                infiniteLoopPrevention++;
+            }
+            // During stream playback, send out the symbols.
+            foreach(MorseSymbol sym in morseStream) {
+                if(cancelToken != null && cancelToken.IsCancellationRequested) { break; }
+                Thread.Sleep((int)sym.getDuration());
+                try { updateTextStream(sym); } catch { }
+            }
+            // Regardless of the outcome (finished or cancelled), stop the sound.
+            mediaPlayer.Stop();
+        }
+
+        /// <summary>
         /// Play the given symbol stream using the internal SignalGenerator provided by NAudio and initialized in the constructor.
         /// This function provides all tracking capabilities for the stream while it's being iterated (progress, cancellation, etc),
         /// and is also a cancellable event.
