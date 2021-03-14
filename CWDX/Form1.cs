@@ -33,34 +33,6 @@ namespace CWDX {
             Program.pbTXProgress = this.pbTXTime;
             // Set up configuration information.
             this.PopulateFromConfiguration();
-
-
-
-            var wavFormat = new WaveAudioFormat(16000, 16, 2);
-            var wavType = WaveGenerator.WaveType.SINE;
-            var lowTriad = WaveGenerator.CreateNewWave(wavFormat, wavType, 100.0, 3.2, 220);
-            var medTriad = WaveGenerator.CreateNewWave(wavFormat, wavType, 100.0, 4.2, 261.6256);
-            var highTriad = WaveGenerator.CreateNewWave(wavFormat, wavType, 100.0, 3.2, 329.6276);
-            var chord = WaveAudioTools.MixSamples(wavFormat, 100.0, (10.0, lowTriad), (30.0, medTriad), (20.0, highTriad));
-            WaveAudioTools.ChangeVolume(100.0, ref chord); // testing volume change
-            var EAS = WaveGenerator.CreateNewWave(wavFormat, wavType, 100.0, 4.2, 1200);
-            var CWTone = WaveGenerator.CreateNewWave(wavFormat, wavType, 100.0, 1.2, 780);
-            WaveAudioTools.AppendSamples(ref chord, (100.0, EAS), (20.0, CWTone));
-            // Play the sound and time its duration (to the best possible).
-            System.Diagnostics.Stopwatch c = new System.Diagnostics.Stopwatch();
-            using(var finalFile = new WaveStream(chord)) {
-                using(System.IO.MemoryStream m = new System.IO.MemoryStream(finalFile.GetRawWaveStream())) {
-                    using(System.Media.SoundPlayer player = new System.Media.SoundPlayer(m)) {
-                        c.Start();
-                        player.Play();
-                        c.Stop();
-                    }
-                }
-                // Show the time.
-                //MessageBox.Show(c.ElapsedMilliseconds.ToString());
-                // Write the file to the desktop for viewing in Audacity.
-                System.IO.File.WriteAllBytes(Environment.GetEnvironmentVariable("USERPROFILE") + "\\Desktop\\testingCode.wav", finalFile.GetRawWaveStream());
-            }
         }
 
         internal void PopulateFromConfiguration(bool specificSection = false, int sectionId = -1) {

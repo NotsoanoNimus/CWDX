@@ -117,7 +117,8 @@ namespace CWDX {
              */
             List<MorseSymbol> timeSequence = new List<MorseSymbol>();
             foreach(MorseSymbol sym in this.baseSequence) {
-                timeSequence.Add(new MorseSymbol(sym.hasSound(),
+                timeSequence.Add(new MorseSymbol(
+                    sym.hasSound(),
                     Math.Round(
                         (double)(sym.getDuration() * Morse.GetWPMFactor(wpm)), 2
                     ),

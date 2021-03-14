@@ -4,6 +4,7 @@ using System;
 using System.Threading;
 using System.Collections.Generic;
 using System.Text;
+using System.Threading.Tasks;
 
 namespace CWDX {
     /// <summary>
@@ -77,6 +78,7 @@ namespace CWDX {
             var streamSequence = new List<WaveSample>(); //container for the resulting stream of samples
             streamSequence.Add(new WaveSample(wavFormat, 0)); //initialize the stream with at least ONE empty sample
             ////Loading icon??
+            foreach(MorseSymbol x in morseStream) { System.Diagnostics.Debug.Write(x.getRepresentation()); }
             foreach(MorseSymbol sym in morseStream) {
                 if(cancelToken != null && cancelToken.IsCancellationRequested) { return; }
                 if(sym.hasSound()) {
@@ -110,22 +112,29 @@ namespace CWDX {
             int infiniteLoopPrevention = 0;
             // Give the player 2s to load the stream.
             while(!mediaPlayer.IsLoadCompleted && infiniteLoopPrevention < 100) {
+                if(cancelToken != null && cancelToken.IsCancellationRequested) {
+                    mediaPlayer.Stop();
+                    mediaPlayer.Dispose();
+                    break;
+                }
                 Thread.Sleep(20); 
                 infiniteLoopPrevention++;
             }
             // During stream playback, send out the symbols.
             for(int index = 0; index < morseStream.Count; index++) {
                 var sym = morseStream[index];
-                if(cancelToken != null && cancelToken.IsCancellationRequested) { break; }
+                if(cancelToken != null && cancelToken.IsCancellationRequested) {
+                    mediaPlayer.Stop();
+                    mediaPlayer.Dispose();
+                    break;
+                }
                 Thread.Sleep((int)sym.getDuration());
-                try { updateTextStream(sym); } catch { }
+                updateTextStream(sym);
                 // Handle progress bar updates.
                 Program.mainForm.Invoke((System.Windows.Forms.MethodInvoker)delegate {
                     try { Program.pbTXProgress.Value = (((index * 100) / morseStream.Count) + 1); } catch { }
                 }); index++;
             }
-            // Regardless of the outcome (finished or cancelled), stop the sound.
-            mediaPlayer.Stop();
         }
 
         /// <summary>
