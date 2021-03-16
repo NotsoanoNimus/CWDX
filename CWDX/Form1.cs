@@ -88,11 +88,9 @@ namespace CWDX {
             try {
                 (List<MorseSymbol> symbols, string outputText) = Morse.GetTimeSequence(txText, wpmValue);
                 this.audioHandler.PlayWaveStream(symbols, cancelToken);
-                //this.audioHandler.PlayStream(symbols, cancelToken);
                 return outputText;
             } catch(Exception e) {
                 // Add error information to the interface and cancel the transmission.
-                ////this.tTXLive.Text += 
                 MessageBox.Show(
                     Environment.NewLine + "Problem creating the Morse audio transmission:"
                     + Environment.NewLine + e.Message

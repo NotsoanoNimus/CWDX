@@ -127,7 +127,8 @@ namespace CWDX {
                     mediaPlayer.Dispose();
                     break;
                 }
-                Thread.Sleep((int)sym.getDuration());
+                //Thread.Sleep((int)sym.getDuration());
+                Task.Delay((int)sym.getDuration()).Wait();
                 updateTextStream(sym);
                 // Handle progress bar updates.
                 Program.mainForm.Invoke((System.Windows.Forms.MethodInvoker)delegate {
