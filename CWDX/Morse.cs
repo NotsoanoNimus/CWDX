@@ -1,203 +1,145 @@
 ﻿using System;
+using System.Linq;
 using System.Collections.Generic;
 using System.Text;
-using System.Text.RegularExpressions;
 
+
+/// <summary>
+/// Terminology:
+///    - Symbol = individual DIT, DAH, or SPACE
+///    - Character = character created from a sequence of symbols and spacing between symbols
+///    - Word = string of characters with appropriate per-character spacing, which don't contain a space CHARACTER (obviously)
+/// </summary>
 namespace CWDX {
 
     /// <summary>
-    /// Represents an individual Morse Code symbol object in a sequence, through three different supplied paramters.
+    /// Define a list of characters which comprise the Morse "alphabet" when outputting Morse-only text.
     /// </summary>
-    class MorseSymbol {
-        internal (bool, double, string) _row;   //ex: (false, 270, "") or (true, 740, "<BR>")
-        /// <summary>
-        /// Creates a Morse symbol used as a single unit when synchronously playing audio with the output sound generator.
-        /// </summary>
-        public MorseSymbol(bool hasSound, double durationMs, string representation) {
-            this._row = (hasSound, durationMs, representation);
-        }
-        /// <summary>
-        /// Gets whether the symbol is a played sound, or a moment of silence.
-        /// </summary>
-        public bool hasSound() { return _row.Item1; }
-        /// <summary>
-        /// Gets the duration in milliseconds for which to play the sound, if the symbol has sound.
-        /// </summary>
-        public double getDuration() { return _row.Item2; }
-        /// <summary>
-        /// Gets the string representing the symbol. This could be a single character or a complete prosign.
-        /// </summary>
-        public string getRepresentation() { return _row.Item3; }
-    }
+    public static class MorseSymbolCharacter {
+        public const char DIT_CHAR = '.';   // DIT character
+        public const char DAH_CHAR = '-';   // DAH character
+        public const char SPACE_CHAR = ' ';   // SPACE character
+    };
 
     /// <summary>
-    /// Takes a string of Morse Code characters [-. ] and generates a sequence of MorseSymbols at a given WPM to represent it.
+    /// Contains constant timing factors used to determine the length of a tone scaled by the selected WPM speed.
     /// </summary>
-    /// <seealso cref="MorseSymbol"/>
-    class MorseSequence {
-        /*
-         * Terminology:
-         * - Symbol = individual DIT, DAH, or SPACE
-         * - Character = character created from a sequence of symbols and spacing between symbols
-         * - Word = string of characters with appropriate per-character spacing, which don't contain a space CHARACTER (obviously)
-         */
-        // Timing information, which is later affected by the WPM when the baseSequence is retrieved.
-        private static readonly double DIT = 1.00;
-        private static readonly double DAH = 3 * DIT;
-        private static readonly double SPACE = 5 * DIT;  // Time between each WORD
-        private static readonly double PER_SYMBOL = DIT;   // Time between each SYMBOL
-        /// <summary>
-        /// Time taken between each CHARACTER unit.
-        /// Always equal to the length of a DAH, representing space between individual characters in a string.
-        /// </summary>
-        public static readonly double PER_CHARACTER = DAH;   // Time between each CHARACTER
+    public static class MorseSymbolDuration {
+        public const double DIT = 1.00;   // Length of one short tone. Unit measurement off of which other lengths are based.
+        public const double DAH = (3 * DIT);   // Length of one long tone and also the space between Morse characters.
+        public const double SPACE = (1 * DIT);   // Length of each space between whole words. (was 5 DITs)
+        public const double PER_SYMBOL = DIT;   // Length of each space between individual symbols.
+        public const double PER_CHARACTER = (DAH - PER_SYMBOL);   // Length of the space between characters. Accounts for each symbol having a trailing PER_SYMBOL length.
+    };
 
-        // Will contain the base sequence generated in the constructor.
-        private List<MorseSymbol> baseSequence = new List<MorseSymbol>();
-        /// <summary>
-        /// String representation of the Morse Code used to build this object.
-        /// </summary>
-        public readonly string symbolSequence = null;
+    /// <summary>
+    /// Represents an individual Morse Code symbol. Associates a Character to a Duration.
+    /// <see cref="Morse"/>
+    /// </summary>
+    public sealed record MorseSymbol( char Representation, double Duration );
 
-        /// <summary>
-        /// Creates a new MorseSequence object using the provided sequence of Morse symbols from a string.
-        /// This is the primary workhorse for setting up a sequence of DITs and DAHS into an audible sound with appropriate spacing.
-        /// </summary>
-        /// <param name="symbolSequence">The symbol sequence of the character to be converted into a sound.</param>
-        /// <param name="prosign">Supplied if the symbolSequence represents a prosign rather than a single character.</param>
-        /// <seealso cref="Morse"/>
-        public MorseSequence(string symbolSequence) {
-            if(symbolSequence.Length < 1) { return; }
-            this.symbolSequence = symbolSequence;
-            foreach(char c in symbolSequence) {
-                // Add the symbol value.
-                switch(c) {
-                    case Morse.DIT_CHAR: {
-                        this.appendSequence(true, DIT, c.ToString());
-                        break;
-                    }
-                    case Morse.DAH_CHAR: {
-                        this.appendSequence(true, DAH, c.ToString());
-                        break;
-                    }
-                    case Morse.SPACE_CHAR: {
-                        this.appendSequence(false, SPACE, c.ToString());
-                        break;
-                    }
-                    default: {
-                        throw new Exception("MorseSequence ctor: 'symbolSequence' contained an invalid Morse symbol!");
-                    }
-                }
-                // Add the PER_SYMBOL spacing.
-                this.appendSequence(false, PER_SYMBOL, "");
+    /// <summary>
+    /// Represents an individual Morse Code character or single Prosign object as a collated sequence of symbols.
+    /// </summary>
+    public sealed record MorseCharacter( string Representation, MorseSymbol[] Sequence ) {
+        internal double _dur;
+        public double TotalDuration {
+            get => _dur;
+            init {
+                // Add each symbol and the gap.
+                foreach ( var x in Sequence )
+                    this._dur += (x.Duration + MorseSymbolDuration.PER_SYMBOL);
+
+                // Lastly, add on the trailing character spacing.
+                this._dur += MorseSymbolDuration.PER_CHARACTER;
             }
-            // Pop the final per-symbol (silent) dit off the stack.
-            this.baseSequence.RemoveAt(this.baseSequence.Count - 1);
         }
-
-        /// <summary>
-        /// Wrapper function to append a new MorseSymbol object onto the base-sequence.
-        /// Wrapper exists in case extra options are needed specifically here at a later time.
-        /// </summary>
-        /// <seealso cref="MorseSymbol"/>
-        private void appendSequence(bool playSound, double duration, string repr) {
-            this.baseSequence.Add(new MorseSymbol(playSound, duration, repr));
-        }
-
-        /// <summary>
-        /// Gets the MorseSymbol sequence (has-sound, timing/spacing, string)
-        /// </summary>
-        /// <param name="wpm"></param>
-        /// <returns></returns>
-        public List<MorseSymbol> GetSequence(int wpm) {
-            /*
-             * Multiply the 'duration' value from each sequence item by the new rate. Ex w/ five WPM:
-             * - DIT = 1.00 * 240 = 240ms
-             * - DAH = 3.00 * 240 = 720ms
-             */
-            List<MorseSymbol> timeSequence = new List<MorseSymbol>();
-            foreach(MorseSymbol sym in this.baseSequence) {
-                timeSequence.Add(new MorseSymbol(
-                    sym.hasSound(),
-                    Math.Round(
-                        (double)(sym.getDuration() * Morse.GetWPMFactor(wpm)), 2
-                    ),
-                    sym.getRepresentation()
-                ));
-            }
-            return timeSequence;
-        }
-    }
+    };
 
     /// <summary>
     /// Represents all static definitions and methods for the Morse Code "protocol". Includes dictionaries for mapping symbols back and forth
     /// and also a way to get a time-sequence representation of a transmit string, for passing to the application audio handler.
     /// </summary>
-    /// <seealso cref="MorseSequence"/>
     /// <seealso cref="MorseSymbol"/>
-    static class Morse {
-        /// <summary>
-        /// Repesentation of a DIT Morse character.
-        /// </summary>
-        public const char DIT_CHAR = '.';
-        /// <summary>
-        /// Repesentation of a DAH Morse character.
-        /// </summary>
-        public const char DAH_CHAR = '-';
-        /// <summary>
-        /// Repesentation of an EMPTY (silent) Morse character for separating Morse symbols.
-        /// </summary>
-        public const char SPACE_CHAR = ' ';
+    public static class Morse {
+
+        // Define a set of constant pairings between characters and their time factors.
+        public static readonly MorseSymbol DIT = new( MorseSymbolCharacter.DIT_CHAR, MorseSymbolDuration.DIT );
+        public static readonly MorseSymbol DAH = new( MorseSymbolCharacter.DAH_CHAR, MorseSymbolDuration.DAH );
+        public static readonly MorseSymbol SPACE = new( MorseSymbolCharacter.SPACE_CHAR, MorseSymbolDuration.SPACE );
 
         /// <summary>
-        /// Defines a dictionary of Morse Code sequences to their character representations. For prosigns, these values will be special
-        /// char values that are later converted to string representations in the final TX output.
+        /// Create the Morse alphabet for all characters and prosigns, and their corresponding (unspaced) symbol sequences.
         /// </summary>
-        public static readonly Dictionary<char, MorseSequence> Characters = new Dictionary<char, MorseSequence>() {
-            // Ordinary ASCII stuff
-            { 'A', new MorseSequence(".-") }, { 'B', new MorseSequence("-...") }, { 'C', new MorseSequence("-.-.") },
-            { 'D', new MorseSequence("-..") }, { 'E', new MorseSequence(".") }, { 'F', new MorseSequence("..-.") },
-            { 'G', new MorseSequence("--.") }, { 'H', new MorseSequence("....") }, { 'I', new MorseSequence("..") },
-            { 'J', new MorseSequence(".---") }, { 'K', new MorseSequence("-.-") }, { 'L', new MorseSequence(".-..") },
-            { 'M', new MorseSequence("--") }, { 'N', new MorseSequence("-.") }, { 'O', new MorseSequence("---") },
-            { 'P', new MorseSequence(".--.") }, { 'Q', new MorseSequence("--.-") }, { 'R', new MorseSequence(".-.") },
-            { 'S', new MorseSequence("...") }, { 'T', new MorseSequence("-") }, { 'U', new MorseSequence("..-") },
-            { 'V', new MorseSequence("...-") }, { 'W', new MorseSequence(".--") }, { 'X', new MorseSequence("-..-") },
-            { 'Y', new MorseSequence("-.--") }, { 'Z', new MorseSequence("--..") },
-            { '1', new MorseSequence(".----") }, { '2', new MorseSequence("..---") }, { '3', new MorseSequence("...--") },
-            { '4', new MorseSequence("....-") }, { '5', new MorseSequence(".....") }, { '6', new MorseSequence("-....") },
-            { '7', new MorseSequence("--...") }, { '8', new MorseSequence("---..") }, { '9', new MorseSequence("----.") },
-            { '0', new MorseSequence("-----") },
-            { ' ', new MorseSequence(" ") }, { '.', new MorseSequence(".-.-.-") }, { ',', new MorseSequence("--..--") },
-            { '?', new MorseSequence("..--..") }, { '\'', new MorseSequence(".----.") }, { '!', new MorseSequence("-.-.--") },
-            { '/', new MorseSequence("-..-.") }, { ':', new MorseSequence("---...") }, { ';', new MorseSequence("-.-.-.") },
-            { '=', new MorseSequence("-...-") }, { '+', new MorseSequence(".-.-.") }, { '-', new MorseSequence("-....-") },
-            { '_', new MorseSequence("..--.-") }, { '"', new MorseSequence(".-..-.") }, { '@', new MorseSequence(".--.-.") },
-        };
+        public static readonly MorseCharacter[] Alphabet = {
+            new( " ", new[]{ SPACE } ),
 
-        /// <summary>
-        /// Defines a dictionary of prosigns to their sequence equivalents. Used primarily in the "RX" section of the application
-        /// for identifying and labeling sequences that APPEAR to be a prosign (e.g. '-.--.' ==> {KN}).
-        /// </summary>
-        // A "prosign" is any run-on of characters designed to create a
-        //   single symbol that conveys a certain meaning -- e.g. <AR> ==> "Over and out"
-        // These symbols are really only used in RX mode, as the user can __-->transmit<--__ whatever prosigns they please with: <texthere>
-        // See: http://www.asciitable.com/
-        // Prosigns List: https://en.wikipedia.org/wiki/Prosigns_for_Morse_code
-        public static Dictionary<string, MorseSequence> Prosigns = new Dictionary<string, MorseSequence>() {
-            { "AR",    new MorseSequence(".-.-.") },   //OUT
-            { "AS",    new MorseSequence(".-...") },   //WAIT
-            { "VE",    new MorseSequence("...-.") },   //VERIFIED
-            { "INT",   new MorseSequence("..-.-") },   //INTERROGATIVE
-            { "HH",    new MorseSequence("........") },   //CORRECTION
-            { "HH AR", new MorseSequence("........ .-.-.") },   //NEVERMIND, OUT
-            { "BT",    new MorseSequence("-...-") },   //BREAK (new section)
-            { "AA",    new MorseSequence(".-.-") },   //NEWLINE
-            { "CT",    new MorseSequence("-.-.-") },   //START-OF-TRANSMISSION (commencing transmission)
-            { "KN",    new MorseSequence("-.--.") },   //INVITATION
-            { "NJ",    new MorseSequence("-..---") },   //WABUN-CODE
-            { "SK",    new MorseSequence("...-.-") },   //END-OF-WORK (silent key)
-            { "SOS",   new MorseSequence("...---...") },   //DISTRESS
+            new( "A", new[]{ DIT, DAH } ),
+            new( "B", new[]{ DAH, DIT, DIT } ),
+            new( "C", new[]{ DAH, DIT, DAH, DIT } ),
+            new( "D", new[]{ DAH, DIT, DIT } ),
+            new( "E", new[]{ DIT } ),
+            new( "F", new[]{ DIT, DIT, DAH, DIT } ),
+            new( "G", new[]{ DAH, DAH, DIT } ),
+            new( "H", new[]{ DIT, DIT, DIT, DIT } ),
+            new( "I", new[]{ DIT, DIT } ),
+            new( "J", new[]{ DIT, DAH, DAH, DAH } ),
+            new( "K", new[]{ DAH, DIT, DAH } ),
+            new( "L", new[]{ DIT, DAH, DIT, DIT } ),
+            new( "M", new[]{ DAH, DAH } ),
+            new( "N", new[]{ DAH, DIT } ),
+            new( "O", new[]{ DAH, DAH, DAH } ),
+            new( "P", new[]{ DIT, DAH, DAH, DIT } ),
+            new( "Q", new[]{ DAH, DAH, DIT, DAH } ),
+            new( "R", new[]{ DIT, DAH, DIT } ),
+            new( "S", new[]{ DIT, DIT, DIT } ),
+            new( "T", new[]{ DAH } ),
+            new( "U", new[]{ DIT, DIT, DAH } ),
+            new( "V", new[]{ DIT, DIT, DIT, DAH } ),
+            new( "W", new[]{ DIT, DAH, DAH } ),
+            new( "X", new[]{ DAH, DIT, DIT, DAH } ),
+            new( "Y", new[]{ DAH, DIT, DAH, DAH } ),
+            new( "Z", new[]{ DAH, DAH, DIT, DIT } ),
+
+            new( "0", new[]{ DAH, DAH, DAH, DAH, DAH } ),
+            new( "1", new[]{ DIT, DAH, DAH, DAH, DAH } ),
+            new( "2", new[]{ DIT, DIT, DAH, DAH, DAH } ),
+            new( "3", new[]{ DIT, DIT, DIT, DAH, DAH } ),
+            new( "4", new[]{ DIT, DIT, DIT, DIT, DAH } ),
+            new( "5", new[]{ DIT, DIT, DIT, DIT, DIT } ),
+            new( "6", new[]{ DAH, DIT, DIT, DIT, DIT } ),
+            new( "7", new[]{ DAH, DAH, DIT, DIT, DIT } ),
+            new( "8", new[]{ DAH, DAH, DAH, DIT, DIT } ),
+            new( "9", new[]{ DAH, DAH, DAH, DAH, DIT } ),
+
+            new( ".", new[]{ DIT, DAH, DIT, DAH, DIT, DAH } ),
+            new( ",", new[]{ DAH, DAH, DIT, DIT, DAH, DAH } ),
+            new( "?", new[]{ DIT, DIT, DAH, DAH, DIT, DIT } ),
+            new( "'", new[]{ DIT, DAH, DAH, DAH, DAH, DIT } ),
+            new( "!", new[]{ DAH, DIT, DAH, DIT, DAH, DAH } ),
+            new( "/", new[]{ DAH, DIT, DIT, DAH, DIT } ),
+            new( ":", new[]{ DAH, DAH, DAH, DIT, DIT, DIT } ),
+            new( ";", new[]{ DAH, DIT, DAH, DIT, DAH, DIT } ),
+            new( "=", new[]{ DAH, DIT, DIT, DIT, DAH } ),
+            new( "+", new[]{ DIT, DAH, DIT, DAH, DIT } ),
+            new( "-", new[]{ DAH, DIT, DIT, DIT, DIT, DAH } ),
+            new( "_", new[]{ DIT, DIT, DAH, DAH, DIT, DAH } ),
+            new( "\"", new[]{ DIT, DAH, DIT, DIT, DAH, DIT } ),
+            new( "@",  new[]{ DIT, DAH, DAH, DIT, DAH, DIT } ),
+
+            // BEGIN PROSIGNS
+            new( "<AR>",    new[]{ DIT, DAH, DIT, DAH, DIT } ),   // OUT
+            new( "<AS>",    new[]{ DIT, DAH, DIT, DIT, DIT } ),   // WAIT
+            new( "<VE>",    new[]{ DIT, DIT, DIT, DAH, DIT } ),   // VERIFIED
+            new( "<INT>",   new[]{ DIT, DIT, DAH, DIT, DAH } ),   // INTERROGATIVE
+            new( "<HH>",    new[]{ DIT, DIT, DIT, DIT, DIT, DIT, DIT, DIT } ),   // CORRECTION/NEVERMIND
+            new( "<BT>",    new[]{ DAH, DIT, DIT, DIT, DAH } ),   // BREAK (new section)
+            new( "<AA>",    new[]{ DIT, DAH, DIT, DAH } ),   // NEWLINE
+            new( "<CT>",    new[]{ DAH, DIT, DAH, DIT, DAH } ),   // START OF TRANSMISSION (commencing transmission)
+            new( "<KN>",    new[]{ DAH, DIT, DAH, DAH, DIT } ),   // INVITATION
+            new( "<NJ>",    new[]{ DAH, DIT, DIT, DAH, DAH, DAH } ),   // WABUN-CODE
+            new( "<SK>",    new[]{ DIT, DIT, DIT, DAH, DIT, DAH } ),   // END OF WORK (silent key)
+            new( "<SOS>",   new[]{ DIT, DIT, DIT, DAH, DAH, DAH, DIT, DIT, DIT } ),   // DISTRESS
         };
 
         /// <summary>
@@ -205,89 +147,77 @@ namespace CWDX {
         /// </summary>
         /// <param name="wpm">WPM for which to get the multiplier.</param>
         /// <returns>A factor representing how close/far audio signals (symbols) should be spaced.</returns>
-        public static double GetWPMFactor(int wpm) {
-            wpm = Math.Max(1, wpm); //WPM can't be below 1, no matter what
+        public static double GetMillisecondsPerSymbolAtWPM( int wpm ) {
+            wpm = Math.Max( 1, wpm ); //WPM can't be below 1, no matter what
+
             // Convert WPM metrics to a measure of milliseconds per symbol.
             //  This calculation is based off of the 'PARIS' model for CW speeds.
             // PARIS is 50 symbols all accounted for, so WPM factor in MILLISECONDS is = [ 60 sec / (50 symbols * wpm) ] * 1000
-            double wpmFactor = Math.Round(((60 / (50 * (double)wpm)) * 1000), 2);
-            return wpmFactor;
+            return Math.Round(((60 / (50 * (double)wpm)) * 1000), 2);
         }
 
         /// <summary>
-        /// Generate a morse time-sequence for the given string (converted to upper-case of course) for the given speed.
-        /// This function is the "core" of the Morse module, to get an audio sequence for the audio handler to deal with.
+        /// Digests a string and returns a sequence of MorseCharacter objects which represent the Morse signal
+        /// ultimately generated by the Transmit text.
         /// </summary>
-        /// <param name="txText">The text to transmit; case-insensitive.</param>
-        /// <param name="wpmSpeed">The WPM speed of the sequence.</param>
-        /// <returns>A list of Morse symbols representing the txText parameter at the given WPM. Audio-player-ready.</returns>
-        /// <seealso cref="MorseSymbol"/>
-        public static (List<MorseSymbol>, string) GetTimeSequence(string txText, int wpmSpeed) {
-            List<MorseSymbol> fullTimeSequence = new List<MorseSymbol>();
-            StringBuilder outputString = new StringBuilder();
-            // Trim the provided string and force upper-case.
+        /// <param name="txText">The text to digest.</param>
+        /// <returns>A sequence of ordered, valid Morse characters, ready to be scaled to a time factor and output as audio.</returns>
+        /// <see cref="MorseCharacter"/>
+        public static (MorseCharacter[], string) GetMorseSequence( string txText ) {
+            if( null == txText )
+                throw new ArgumentNullException( nameof( txText ) );
+
+            // Initial declarations.
+            var fullTimeSequence = new List<MorseCharacter>();
+            var morseString = new StringBuilder();
+
+            // Capitalize and trim the input string.
             txText = txText.ToUpper().Trim();
-            // Get all valid prosigns, map their unique positions to a tuple of their (length, symbols [ie '...---'], text).
-            MatchCollection mc = Regex.Matches(txText, "<([^>]+)>");
-            var matchedProsigns = new Dictionary<int, (int lengthPastIndex, string psSymbolSequence, string psRepresentation)>();
-            foreach(Match m in mc) {
-                // For each character between the <>, get its symbols (... --- etc) and string them all together via a StringBuilder.
-                var prosignText = new StringBuilder();
-                foreach(char c in m.Groups[1].Value) {
-                    try {
-                        MorseSequence seq; Morse.Characters.TryGetValue(c, out seq);
-                        if(seq is null) { throw new Exception(); }
-                        prosignText.Append(seq.symbolSequence);
-                    } catch { throw new Exception("Morse.GetTimeSequence: invalid character in prosign: " + c); }
-                }
-                // Add it to the capture Dictionary.
-                matchedProsigns.Add(m.Groups[0].Index, (  m.Groups[0].Length, prosignText.ToString(), m.Groups[1].Value  ));
-            }
+            if ( txText.Length < 1 )
+                throw new ArgumentException( "Transmit text must be more than only whitespace." );
 
-            // For each item in the (parsed) text, get the timing information and append the output string.
-            for(int i = 0; i < txText.Length; i++) {
-                // Check if the current index is the location of a known prosign.
-                if(matchedProsigns.ContainsKey(i)) {
-                    try {
-                        // Get the prosign contents.
-                        (int len, string seq, string rep) prosign;
-                        matchedProsigns.TryGetValue(i, out prosign);
-                        // Set up a new sequence with the full symbol string from an earlier step.
-                        var x = new MorseSequence(prosign.seq);
-                        if(x == null) { continue; }
-                        // For each symbol, add it to the overall sequencer.
-                        foreach(MorseSymbol sym in x.GetSequence(wpmSpeed)) { fullTimeSequence.Add(sym); }
-                        // Write the prosign contents to the output string as-is.
-                        outputString.Append(string.Format("<{0}>", prosign.rep));
-                        // Add a sequence gapping at the end of this "character" (prosigns are considered one character unit).
-                        fullTimeSequence.Add(new MorseSymbol(false, Morse.GetWPMFactor(wpmSpeed) * MorseSequence.PER_CHARACTER, "  "));
-                        // Increment the index to 'skip over' the rest of the prosign. If this lands on '>', no big deal; it will be skipped.
-                        i += (prosign.len - 1);
-                    } catch { throw new Exception("Morse.GetTimeSequence: unknown prosign is the TX sequence at position: " + i); }
-                    // Forcibly continue.
-                    continue;
+            // Iterate the input string.
+            for ( int i = 0; i < txText.Length; i++ ) {
+                string rep = txText[i].ToString();
+
+                // A '<' character indicates a prosign is being used, which spans multiple characters.
+                if ( rep == "<" ) {
+                    // Start at the next character and seek the first closing angle bracket.
+                    int end = i + 1;
+                    while ( end < txText.Length && '>' != txText[end] ) end++;
+
+                    // If the scan hit the end of the transmit string, or the prosign is empty, throw an exception.
+                    if ( end == txText.Length )
+                        throw new ArgumentException( "Unclosed prosign angle bracket ('<') at position " + i );
+                    else if ( end == (i + 1) )
+                        throw new ArgumentException( "Empty prosign at position " + i );
+
+                    // Otherwise, set 'rep' to the substring.
+                    rep = txText[i..(end+1)];
+                    i = end;   // scroll the counter
                 }
 
-                // If no prosign was detected at the current position, proceed normally.
-                char c = txText[i];
-                try {
-                    MorseSequence morseChar; Morse.Characters.TryGetValue(c, out morseChar);
-                    if(morseChar == null) { continue; }
-                    // Append all symbols and string representations
-                    foreach(MorseSymbol sym in morseChar.GetSequence(wpmSpeed)) {
-                        fullTimeSequence.Add(sym);
-                        outputString.Append(sym.getRepresentation());
-                    }
-                    outputString.Append(string.Format("({0}) ", c.ToString()));   //append a space between characters
-                    // Add the gap between individual characters
-                    fullTimeSequence.Add(new MorseSymbol(false, Morse.GetWPMFactor(wpmSpeed) * MorseSequence.PER_CHARACTER, "  "));
-                } catch { throw new Exception(string.Format("Morse.GetTimeSequence: unknown character \"{0}\" in the TX sequence.", c)); }
+                // Search for the matching static object in the declared Alphabet.
+                //   If the character isn't found in the lookup, skip it.
+                if ( !Alphabet.Any( x => x.Representation == rep ) ) continue;
+
+                fullTimeSequence.Add( Alphabet.First( x => x.Representation == rep ) );
             }
-            // Pop off the last PER_CHARACTER item in the time sequence, as well as the trailing space in the outputString.
-            fullTimeSequence.RemoveAt(fullTimeSequence.Count - 1);
-            outputString.Remove(outputString.Length - 1, 1);
-            // Send back the information.
-            return (fullTimeSequence, outputString.ToString());
+
+            // Make sure there's something to return in the list.
+            if ( fullTimeSequence.Count < 1 )
+                throw new ArgumentException( "The transmit text did not generate any Morse sequences." );
+
+            // Collate the final Morse string. This is an "easy" way to just return the string of valid parsed TX text as Morse.
+            foreach ( var x in fullTimeSequence ) { 
+                foreach ( var y in x.Sequence )
+                    morseString.Append( y.Representation );
+
+                morseString.Append( ' ' );
+            }
+
+            // Return the final sequence.
+            return (fullTimeSequence.ToArray(), morseString.ToString());
         }
 
     }

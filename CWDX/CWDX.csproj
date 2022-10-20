@@ -2,12 +2,14 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>netcoreapp3.1</TargetFramework>
+    <TargetFramework>net5.0-windows</TargetFramework>
     <UseWindowsForms>true</UseWindowsForms>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="NAudio" Version="1.10.0" />
+    <Reference Include="ToneBaker">
+      <HintPath>..\..\ToneBaker\ToneBaker\bin\Debug\ToneBaker.dll</HintPath>
+    </Reference>
   </ItemGroup>
 
   <ItemGroup>
